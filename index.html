@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>簡易見積作成アプリ</title>
+  <style>
+    :root {
+      font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+      color: #1f2937;
+      background: #f3f4f6;
+    }
+    body {
+      margin: 0;
+      padding: 24px;
+    }
+    .container {
+      max-width: 920px;
+      margin: 0 auto;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+      padding: 24px;
+    }
+    h1 {
+      margin-top: 0;
+      font-size: 1.6rem;
+    }
+    .meta {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+    label {
+      display: block;
+      font-size: 0.9rem;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    input {
+      box-sizing: border-box;
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      font-size: 0.95rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    th, td {
+      border-bottom: 1px solid #e5e7eb;
+      padding: 8px;
+      text-align: left;
+      vertical-align: middle;
+    }
+    th {
+      background: #f9fafb;
+      font-size: 0.88rem;
+    }
+    td .num {
+      text-align: right;
+    }
+    .qty, .price {
+      max-width: 110px;
+    }
+    .row-total {
+      text-align: right;
+      min-width: 120px;
+      font-weight: 600;
+    }
+    .actions {
+      margin-top: 12px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    button {
+      border: none;
+      border-radius: 8px;
+      padding: 10px 14px;
+      cursor: pointer;
+      font-size: 0.92rem;
+    }
+    .primary { background: #2563eb; color: #fff; }
+    .secondary { background: #e5e7eb; }
+    .danger { background: #fee2e2; color: #b91c1c; }
+    .summary {
+      margin-top: 16px;
+      display: grid;
+      gap: 6px;
+      justify-content: end;
+      font-size: 1rem;
+    }
+    .summary div { text-align: right; }
+    .total {
+      font-size: 1.2rem;
+      font-weight: 700;
+    }
+    .note {
+      margin-top: 16px;
+      color: #4b5563;
+      font-size: 0.88rem;
+    }
+    @media print {
+      body { background: #fff; padding: 0; }
+      .container { box-shadow: none; border-radius: 0; }
+      .no-print { display: none !important; }
+      th:last-child, td:last-child { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <h1>簡易見積作成アプリ</h1>
+
+    <section class="meta">
+      <div>
+        <label for="quoteNo">見積番号</label>
+        <input id="quoteNo" placeholder="例: Q-2026-001" />
+      </div>
+      <div>
+        <label for="quoteDate">見積日</label>
+        <input id="quoteDate" type="date" />
+      </div>
+      <div>
+        <label for="customer">宛先</label>
+        <input id="customer" placeholder="株式会社〇〇" />
+      </div>
+      <div>
+        <label for="taxRate">消費税率（%）</label>
+        <input id="taxRate" type="number" min="0" value="10" />
+      </div>
+    </section>
+
+    <table aria-label="見積明細">
+      <thead>
+        <tr>
+          <th style="width:45%">品目</th>
+          <th style="width:15%">数量</th>
+          <th style="width:20%">単価（円）</th>
+          <th style="width:15%">金額（円）</th>
+          <th class="no-print" style="width:5%">操作</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+
+    <div class="actions no-print">
+      <button class="primary" id="addRowBtn">行を追加</button>
+      <button class="secondary" id="printBtn">印刷 / PDF保存</button>
+    </div>
+
+    <section class="summary" aria-live="polite">
+      <div>小計: <span id="subtotal">0</span> 円</div>
+      <div>消費税: <span id="tax">0</span> 円</div>
+      <div class="total">合計: <span id="total">0</span> 円</div>
+    </section>
+
+    <p class="note">※ 入力内容はブラウザを閉じると消えます。必要に応じて印刷 / PDF保存してください。</p>
+  </main>
+
+  <template id="rowTemplate">
+    <tr>
+      <td><input class="item" placeholder="例: Web制作費" /></td>
+      <td><input class="qty" type="number" min="0" step="1" value="1" /></td>
+      <td><input class="price" type="number" min="0" step="1" value="0" /></td>
+      <td class="row-total">0</td>
+      <td class="no-print"><button class="danger remove" type="button">削除</button></td>
+    </tr>
+  </template>
+
+  <script>
+    const rowsEl = document.getElementById('rows');
+    const template = document.getElementById('rowTemplate');
+    const taxRateEl = document.getElementById('taxRate');
+    const subtotalEl = document.getElementById('subtotal');
+    const taxEl = document.getElementById('tax');
+    const totalEl = document.getElementById('total');
+
+    const yen = new Intl.NumberFormat('ja-JP');
+
+    function addRow(item = '', qty = 1, price = 0) {
+      const clone = template.content.cloneNode(true);
+      const tr = clone.querySelector('tr');
+
+      tr.querySelector('.item').value = item;
+      tr.querySelector('.qty').value = qty;
+      tr.querySelector('.price').value = price;
+
+      tr.addEventListener('input', recalc);
+      tr.querySelector('.remove').addEventListener('click', () => {
+        tr.remove();
+        if (!rowsEl.children.length) addRow();
+        recalc();
+      });
+
+      rowsEl.appendChild(tr);
+      recalc();
+    }
+
+    function recalc() {
+      let subtotal = 0;
+      [...rowsEl.querySelectorAll('tr')].forEach((tr) => {
+        const qty = Number(tr.querySelector('.qty').value) || 0;
+        const price = Number(tr.querySelector('.price').value) || 0;
+        const rowTotal = qty * price;
+        tr.querySelector('.row-total').textContent = yen.format(rowTotal);
+        subtotal += rowTotal;
+      });
+
+      const taxRate = (Number(taxRateEl.value) || 0) / 100;
+      const tax = Math.round(subtotal * taxRate);
+      const total = subtotal + tax;
+
+      subtotalEl.textContent = yen.format(subtotal);
+      taxEl.textContent = yen.format(tax);
+      totalEl.textContent = yen.format(total);
+    }
+
+    document.getElementById('addRowBtn').addEventListener('click', () => addRow());
+    document.getElementById('printBtn').addEventListener('click', () => window.print());
+    taxRateEl.addEventListener('input', recalc);
+
+    document.getElementById('quoteDate').value = new Date().toISOString().slice(0, 10);
+    addRow('初期設定費', 1, 50000);
+    addRow('月額保守費', 12, 10000);
+  </script>
+</body>
+</html>
